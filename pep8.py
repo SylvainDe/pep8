@@ -1178,34 +1178,27 @@ def inexisting_last_line_is_reachable(tree):
         * assert False.
     We'll consider the last line to be reachable if TODO
     """
-    assert isinstance(tree, ast.AST)
-    children = list(ast.iter_child_nodes(tree))
-    last_child = children[-1]
+    if isinstance(tree, list):
+        return inexisting_last_line_is_reachable(tree[-1]) if tree else True
+    assert isinstance(tree, ast.stmt)
     # These stop reachability
-    if isinstance(last_child, ast.Return):
+    if isinstance(tree, (ast.Return, ast.Raise)):
         return False
-    elif isinstance(last_child, ast.Raise):
-        return False
-    elif isinstance(last_child, ast.Assert):
-        test_val = last_child.test
+    elif isinstance(tree, ast.Assert):
+        test_val = tree.test
         if isinstance(test_val, ast.Name) and test_val.id == "False":
             return False
         if isinstance(test_val, ast.NameConstant) and not test_val.value:
             return False
     # These propagage reachability
-    elif isinstance(last_child, ast.If):
-        then_body, else_body = last_child.body, last_child.orelse
-        if not else_body:
-            return True
-        return any(inexisting_last_line_is_reachable(branch[-1])
-                   for branch in (then_body, else_body))
-    # elif isinstance(last_child, ast.For):
-    #     pass # print(last_child)
-    # elif isinstance(last_child, ast.While):
-    #     pass # print(last_child)
-    # Otherwise, it is reachable
-    print(last_child)
-    return False  # will be true at the end
+    elif isinstance(tree, ast.If):
+        return any(inexisting_last_line_is_reachable(branch)
+                   for branch in (tree.body, tree.orelse))
+    elif isinstance(tree, ast.TryFinally):
+        return False
+        # This is complicated to handle : return inexisting_last_line_is_reachable(tree.finalbody)
+    # Otherwise, assume that code was supposed to be reachable
+    return True
 
 
 class UnconsistentReturns():
@@ -1239,16 +1232,17 @@ class UnconsistentReturns():
         reachable) or in none of them.
         """
         assert isinstance(func_node, ast.FunctionDef)
-        returns = UnconsistentReturns.collect_return_nodes(func_node)
+        returns = list(UnconsistentReturns.collect_return_nodes(func_node))
         returns_value = [ret for ret in returns if ret.value is not None]
         if returns_value:
+            func_name = func_node.name
             for r in returns:
                 if r.value is None:
                     yield (r.lineno, r.col_offset,
-                           "W700 unconsistent return values", "toto")
-            if inexisting_last_line_is_reachable(func_node):
+                       "W700 unconsistent return values in %s" % func_name, "toto")
+            if inexisting_last_line_is_reachable(func_node.body):
                 yield (func_node.lineno, func_node.col_offset,
-                       "W701 unconsistent return values", "toto")
+                       "W701 unconsistent return values in %s" % func_name, "toto")
 
     @staticmethod
     def collect_return_nodes(func_node):
@@ -1257,10 +1251,15 @@ class UnconsistentReturns():
         The tricky part is not to get the nodes corresponding to return
         statements in nested function definitions.
         """
-        # THIS DOES NOT HANDLE NESTED FUNCTIONS PROPERLY
+        from collections import deque
         assert isinstance(func_node, ast.FunctionDef)
-        return [node for node in ast.walk(func_node)
-                if isinstance(node, ast.Return)]
+        todo = deque(ast.iter_child_nodes(func_node))
+        while todo:
+            node = todo.popleft()
+            if not isinstance(node, ast.FunctionDef):
+                todo.extend(ast.iter_child_nodes(node))
+                if isinstance(node, ast.Return):
+                    yield node
 
 
 ##############################################################################
@@ -1421,13 +1420,11 @@ def _get_parameters(function):
 def register_check(check):
     """Register a new check object."""
     def _add_check(check, kind, args):
-        # print(check, kind, len(_checks[kind]))
         codes = ERRORCODE_REGEX.findall(check.__doc__ or '')
         if check in _checks[kind]:
             _checks[kind][check][0].extend(codes or [])
         else:
             _checks[kind][check] = (codes or [''], args)
-        # print("_add_check", kind, check.__name__, len(_checks[kind]))
     if inspect.isfunction(check):
         args = _get_parameters(check)
         if args and args[0] in ('physical_line', 'logical_line'):
@@ -1436,7 +1433,6 @@ def register_check(check):
         if check.__module__ in ("pep8", "__main__"):  # HACK
             args = _get_parameters(check.__init__)
             if args and args[0] == 'self' and args[1] == 'tree':
-                # print(check, args)
                 _add_check(check, args[1], args)
 
 
@@ -1445,13 +1441,11 @@ def init_checks_registry():
 
     The first argument name is either 'physical_line' or 'logical_line'.
     """
-    print("init_checks_registry begin")
     mod = inspect.getmodule(register_check)
     for (name, function) in inspect.getmembers(mod, inspect.isfunction):
         register_check(function)
     for (name, klass) in inspect.getmembers(mod, inspect.isclass):
         register_check(klass)
-    print("init_checks_registry end")
 init_checks_registry()
 
 
@@ -1468,7 +1462,6 @@ class Checker(object):
         self._physical_checks = options.physical_checks
         self._logical_checks = options.logical_checks
         self._ast_checks = options.ast_checks
-        # print("options.ast_checks", options.ast_checks)
         self.max_line_length = options.max_line_length
         self.multiline = False  # in a multiline string?
         self.hang_closing = options.hang_closing
@@ -1607,13 +1600,11 @@ class Checker(object):
 
     def check_ast(self):
         """Build the file's AST and run all AST checks."""
-        # print("check_ast")
         try:
             tree = compile(''.join(self.lines), '', 'exec', PyCF_ONLY_AST)
         except (ValueError, SyntaxError, TypeError):
             return self.report_invalid_syntax()
         for cls, __ in self._ast_checks:
-            # print("toto", cls)
             checker = cls(tree, self.filename)
             for lineno, offset, text, check in checker.run():
                 if not self.lines or not noqa(self.lines[lineno - 1]):
@@ -1665,11 +1656,9 @@ class Checker(object):
 
     def check_all(self, expected=None, line_offset=0):
         """Run all checks on the input file."""
-        # print("check_all")
         self.report.init_file(self.filename, self.lines, expected, line_offset)
         self.total_lines = len(self.lines)
         if self._ast_checks:
-            # print("toto3")
             self.check_ast()
         self.line_number = 0
         self.indent_char = None
@@ -1919,9 +1908,6 @@ class StyleGuide(object):
         options.physical_checks = self.get_checks('physical_line')
         options.logical_checks = self.get_checks('logical_line')
         options.ast_checks = self.get_checks('tree')
-        # print("options.physical_checks", len(options.physical_checks))
-        # print("options.logical_checks", len(options.logical_checks))
-        # print("options.ast_checks", len(options.ast_checks))
         self.init_report()
 
     def init_report(self, reporter=None):
@@ -2014,7 +2000,6 @@ class StyleGuide(object):
         checks = [(check, args)
                   for check, (codes, args) in _checks[argument_name].items()
                   if any(not self.ignore_code(code) for code in codes)]
-        print(argument_name, len(checks), len(_checks[argument_name]))
         return sorted(checks, key=lambda arg: arg[0].__name__)
 
 

@@ -8,25 +8,26 @@ import itertools
 # Correct ###
 
 
-def foo(x):
+def foo_ok(x):
     if x >= 0:
         return math.sqrt(x)
     else:
         return None
 
 
-def bar(x):
+def bar_ok(x):
     if x < 0:
         return None
     return math.sqrt(x)
 
+
 # Not correct ###
 #: W701:1:1
-def foo(x):
+def foo_ko(x):
     if x >= 0:
         return math.sqrt(x)
 #: W700:3:9
-def bar(x):
+def bar_ko(x):
     if x < 0:
         return
     return math.sqrt(x)
@@ -36,7 +37,7 @@ def bar(x):
 # Correct ###
 
 
-def foo(x):
+def foo_ok(x):
     if x >= 0:
         return math.sqrt(x)
     elif x == 0:
@@ -45,23 +46,49 @@ def foo(x):
         return None
 
 
-def goldback_conjecture():
+def goldbach_conjecture_ok():
     for i in itertools.count(2):
         if not can_be_expressed_as_prime_sum(i):
             return i
     assert False
 
+
+def outer_function():
+
+    def nested_function():
+        return 6 * 9
+
+    print(42 == nested_function())
+    return
 # Not correct ###
-
-
-def foo(x):
+#: W701:1:1
+def foo_ko(x):
     if x >= 0:
         return math.sqrt(x)
     elif x == 0:
         return 0
-
-
-def goldback_conjecture():
+#: W701:1:1
+def goldbach_conjecture_ko():
     for i in itertools.count(2):
         if not can_be_expressed_as_prime_sum(i):
             return i
+
+
+# W701:1:1
+def return_finally1():  # return 1
+    try:
+        return 1
+    finally:
+        pass
+#: W700:5:9
+def return_finally2():  # return None
+    try:
+        return 2
+    finally:
+        return
+#: W700:3:9
+def return_finally3():  # return 4
+    try:
+        return
+    finally:
+        return 4
