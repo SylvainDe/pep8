@@ -1164,43 +1164,6 @@ def python_3000_backticks(logical_line):
         yield pos, "W604 backticks are deprecated, use 'repr()'"
 
 
-def inexisting_last_line_is_reachable(tree):
-    r"""Return true if inexisting last line of ast tree is reachable.
-
-    Detecting whether the last line of some piece of code is reachable or not
-    corresponds to solving the halting problem which is known to be impossible.
-    However, we could solve a relaxed version of this : indeed, we may assume
-    that:
-     - all code is written for a reason and is supposed to be reachable.
-     - only a limited amount of statements may break the reachable property:
-        * return statements
-        * raise statements
-        * assert False.
-    We'll consider the last line to be reachable if TODO
-    """
-    if isinstance(tree, list):
-        return inexisting_last_line_is_reachable(tree[-1]) if tree else True
-    assert isinstance(tree, ast.stmt)
-    # These stop reachability
-    if isinstance(tree, (ast.Return, ast.Raise)):
-        return False
-    elif isinstance(tree, ast.Assert):
-        test_val = tree.test
-        if isinstance(test_val, ast.Name) and test_val.id == "False":
-            return False
-        if isinstance(test_val, ast.NameConstant) and not test_val.value:
-            return False
-    # These propagage reachability
-    elif isinstance(tree, ast.If):
-        return any(inexisting_last_line_is_reachable(branch)
-                   for branch in (tree.body, tree.orelse))
-    elif isinstance(tree, ast.TryFinally):
-        return False
-        # This is complicated to handle : return inexisting_last_line_is_reachable(tree.finalbody)
-    # Otherwise, assume that code was supposed to be reachable
-    return True
-
-
 class UnconsistentReturns():
     r"""This doc mentions W700 and W701."""
 
@@ -1232,17 +1195,29 @@ class UnconsistentReturns():
         reachable) or in none of them.
         """
         assert isinstance(func_node, ast.FunctionDef)
-        returns = list(UnconsistentReturns.collect_return_nodes(func_node))
+        returns = list(FlowAnalysis.collect_return_nodes(func_node))
         returns_value = [ret for ret in returns if ret.value is not None]
         if returns_value:
             func_name = func_node.name
             for r in returns:
                 if r.value is None:
-                    yield (r.lineno, r.col_offset,
-                       "W700 unconsistent return values in %s" % func_name, "toto")
-            if inexisting_last_line_is_reachable(func_node.body):
-                yield (func_node.lineno, func_node.col_offset,
-                       "W701 unconsistent return values in %s" % func_name, "toto")
+                    yield (r.lineno,
+                           r.col_offset,
+                           "W700 unconsistent return values in %s" % func_name,
+                           "toto")
+            if FlowAnalysis.inexisting_last_line_is_reachable(func_node.body):
+                yield (func_node.lineno,
+                       func_node.col_offset,
+                       "W701 unconsistent return values in %s" % func_name,
+                       "toto")
+
+
+class FlowAnalysis():
+    r"""Class of utility methods to perform flow analysis.
+
+    Class container for various static methods. This class probably
+    shouldn't be a class but a module but it seems like being a single
+    file is one of the pep8 features."""
 
     @staticmethod
     def collect_return_nodes(func_node):
@@ -1250,6 +1225,7 @@ class UnconsistentReturns():
 
         The tricky part is not to get the nodes corresponding to return
         statements in nested function definitions.
+        Heavily based on the ast.walk() function.
         """
         from collections import deque
         assert isinstance(func_node, ast.FunctionDef)
@@ -1260,6 +1236,80 @@ class UnconsistentReturns():
                 todo.extend(ast.iter_child_nodes(node))
                 if isinstance(node, ast.Return):
                     yield node
+
+    @staticmethod
+    def inexisting_last_line_is_reachable(tree):
+        r"""Return true if inexisting last line of ast tree is reachable.
+
+        Detecting whether the last line of some piece of code is reachable or
+        not corresponds to solving the halting problem which is known to be
+        impossible. However, we could solve a relaxed version of this :
+        indeed, we may assume that:
+         - all code is written for a reason and is supposed to be reachable.
+         - only a few kind of statements may break the reachable property:
+            * return statements
+            * raise statements
+            * assert False.
+        We'll consider the last line to be reachable if TODO
+        """
+        if isinstance(tree, list):
+            if tree:
+                return FlowAnalysis.inexisting_last_line_is_reachable(tree[-1])
+            return True
+        assert isinstance(tree, ast.stmt)
+        # These stop reachability
+        if isinstance(tree, (ast.Return, ast.Raise)):
+            return False
+        elif isinstance(tree, ast.Assert):
+            if FlowAnalysis.expression_must_be_false(tree.test):
+                return False
+        # These propagage reachability
+        elif isinstance(tree, ast.If):
+            branches = []
+            if not FlowAnalysis.expression_must_be_true(tree.test):
+                branches.append(tree.orelse)
+            if not FlowAnalysis.expression_must_be_false(tree.test):
+                branches.append(tree.body)
+            return any(FlowAnalysis.inexisting_last_line_is_reachable(brch)
+                       for brch in branches)
+        elif isinstance(tree, ast.TryFinally):
+            return False
+            # This is complicated to handle :
+            # return inexisting_last_line_is_reachable(tree.finalbody)
+        # Otherwise, assume that code was supposed to be reachable
+        # and that reachability hasn't been broken
+        return True
+
+    @staticmethod
+    def expression_must_be_true(tree):
+        assert isinstance(tree, ast.expr)
+        try:
+            if isinstance(tree, ast.NameConstant) and tree.value in (True, ):
+                return True
+        except AttributeError:
+            pass  # NameConstant is from Python 3.4
+        if isinstance(tree, ast.Name) and tree.id == "True":
+            return True
+        elif isinstance(tree, ast.UnaryOp):
+            if isinstance(tree.op, ast.Not):
+                return FlowAnalysis.expression_must_be_false(tree.operand)
+        return False
+
+    @staticmethod
+    def expression_must_be_false(tree):
+        assert isinstance(tree, ast.expr)
+        try:
+            if (isinstance(tree, ast.NameConstant) and
+               tree.value in (False, None)):
+                return True
+        except AttributeError:
+            pass  # NameConstant is from Python 3.4
+        if isinstance(tree, ast.Name) and tree.id == "False":
+            return True
+        elif isinstance(tree, ast.UnaryOp):
+            if isinstance(tree.op, ast.Not):
+                return FlowAnalysis.expression_must_be_true(tree.operand)
+        return False
 
 
 ##############################################################################
@@ -1431,9 +1481,11 @@ def register_check(check):
             _add_check(check, args[0], args)
     elif inspect.isclass(check):
         if check.__module__ in ("pep8", "__main__"):  # HACK
-            args = _get_parameters(check.__init__)
-            if args and args[0] == 'self' and args[1] == 'tree':
-                _add_check(check, args[1], args)
+            init = getattr(check, '__init__', None)
+            if init and inspect.isfunction(init):
+                args = _get_parameters(init)
+                if args and args[0] == 'self' and args[1] == 'tree':
+                    _add_check(check, args[1], args)
 
 
 def init_checks_registry():

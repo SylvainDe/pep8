@@ -21,6 +21,13 @@ def bar_ok(x):
     return math.sqrt(x)
 
 
+def foobar_ok(x):
+    if True:
+        return None
+    else:
+        pass
+
+
 # Not correct ###
 #: W701:1:1
 def foo_ko(x):
@@ -50,7 +57,7 @@ def goldbach_conjecture_ok():
     for i in itertools.count(2):
         if not can_be_expressed_as_prime_sum(i):
             return i
-    assert False
+    assert not True
 
 
 def outer_function():
