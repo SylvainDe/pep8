@@ -1481,7 +1481,8 @@ def register_check(check):
             _add_check(check, args[0], args)
     elif inspect.isclass(check):
         init = getattr(check, '__init__', None)
-        # Exclude slot wrappers. Python 3 uses functions, Python 2 unbound methods.
+        # Exclude slot wrappers.
+        # Python 3 uses functions, Python 2 unbound methods.
         if inspect.isfunction(init) or inspect.ismethod(init):
             args = _get_parameters(init)
             if args and args[0] == 'self' and args[1] == 'tree':
