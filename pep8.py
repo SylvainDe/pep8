@@ -758,7 +758,7 @@ def whitespace_around_named_parameter_equals(logical_line, tokens):
     Okay: boolean(a != b)
     Okay: boolean(a <= b)
     Okay: boolean(a >= b)
-    Okay: def foo(arg: int = 42):\n    pass
+    # Only with Python 3 - Okay: def foo(arg: int = 42):\n    pass
     E251: def complex(real, imag = 0.0):\n  return magic(r = real, i = imag)
     """
     parens = 0
@@ -1284,7 +1284,7 @@ class FlowAnalysis():
     def expression_must_be_true(tree):
         assert isinstance(tree, ast.expr)
         try:
-            if isinstance(tree, ast.NameConstant) and tree.value in (True, ):
+            if isinstance(tree, ast.NameConstant) and tree.value:
                 return True
         except AttributeError:
             pass  # NameConstant is from Python 3.4
@@ -1299,8 +1299,7 @@ class FlowAnalysis():
     def expression_must_be_false(tree):
         assert isinstance(tree, ast.expr)
         try:
-            if (isinstance(tree, ast.NameConstant) and
-               tree.value in (False, None)):
+            if isinstance(tree, ast.NameConstant) and not tree.value:
                 return True
         except AttributeError:
             pass  # NameConstant is from Python 3.4
@@ -1464,7 +1463,8 @@ def _get_parameters(function):
     if sys.version_info >= (3, 3):
         return list(inspect.signature(function).parameters)
     else:
-        return inspect.getargspec(function)[0]
+        getarg = getattr(inspect, 'getfullargspec', inspect.getargspec)
+        return getarg(function).args
 
 
 def register_check(check):
@@ -1480,12 +1480,12 @@ def register_check(check):
         if args and args[0] in ('physical_line', 'logical_line'):
             _add_check(check, args[0], args)
     elif inspect.isclass(check):
-        if check.__module__ in ("pep8", "__main__"):  # HACK
-            init = getattr(check, '__init__', None)
-            if init and inspect.isfunction(init):
-                args = _get_parameters(init)
-                if args and args[0] == 'self' and args[1] == 'tree':
-                    _add_check(check, args[1], args)
+        init = getattr(check, '__init__', None)
+        # Exclude slot wrappers. Python 3 uses functions, Python 2 unbound methods.
+        if inspect.isfunction(init) or inspect.ismethod(init):
+            args = _get_parameters(init)
+            if args and args[0] == 'self' and args[1] == 'tree':
+                _add_check(check, args[1], args)
 
 
 def init_checks_registry():
