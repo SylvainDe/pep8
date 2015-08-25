@@ -1165,11 +1165,18 @@ def python_3000_backticks(logical_line):
 
 
 class UnconsistentReturns():
-    r"""This doc mentions W700 and W701."""
+    r"""Check that return statement are consistent.
+
+    Functions should either return an explicit value in all return
+    statements (including the final value-less implicit return if
+    reachable) or in none of them.
+    If a return statement returns an explicit value in a function :
+        * return statements with no explicit values lead to W700.
+        * end of function (if reachable) leads to W701.
+    """
 
     def __init__(self, tree, filename):
-        r"""This doc mentions W700 and W701."""
-        # print("init1")
+        r"""Init."""
         self.tree = tree
         self.filename = filename
 
@@ -1189,10 +1196,6 @@ class UnconsistentReturns():
     @staticmethod
     def check_in_func(func_node):
         r"""Check for inconsistent returns (with or without values) in function.
-
-        Functions should either return an explicit value in all return
-        statements (including the final value-less implicit return if
-        reachable) or in none of them.
         """
         assert isinstance(func_node, ast.FunctionDef)
         returns = list(FlowAnalysis.collect_return_nodes(func_node))
@@ -1205,7 +1208,7 @@ class UnconsistentReturns():
                            r.col_offset,
                            "W700 unconsistent return values in %s" % func_name,
                            "toto")
-            if FlowAnalysis.inexisting_last_line_is_reachable(func_node.body):
+            if FlowAnalysis.end_of_block_is_reachable(func_node.body):
                 yield (func_node.lineno,
                        func_node.col_offset,
                        "W701 unconsistent return values in %s" % func_name,
@@ -1238,31 +1241,31 @@ class FlowAnalysis():
                     yield node
 
     @staticmethod
-    def inexisting_last_line_is_reachable(tree):
-        r"""Return true if inexisting last line of ast tree is reachable.
+    def end_of_block_is_reachable(tree):
+        r"""Return true if the end of a block is reachable.
 
-        Detecting whether the last line of some piece of code is reachable or
+        A block can be a single ast.stmt or a list of them.
+        Detecting whether the end of some piece of code is reachable or
         not corresponds to solving the halting problem which is known to be
         impossible. However, we could solve a relaxed version of this :
         indeed, we may assume that:
-         - all code is written for a reason and is supposed to be reachable.
+         - all code is reachable except for obvious cases.
          - only a few kind of statements may break the reachable property:
             * return statements
             * raise statements
-            * assert False.
-        We'll consider the last line to be reachable if TODO
+            * assert with "obviously"-False values.
+        We'll consider the end of block to be reachable if nothing breaks
+        the reachability property.
         """
+        this_func = FlowAnalysis.end_of_block_is_reachable  # shorter name
         if isinstance(tree, list):
-            if tree:
-                return FlowAnalysis.inexisting_last_line_is_reachable(tree[-1])
-            return True
+            return all(this_func(stmt) for stmt in tree)
         assert isinstance(tree, ast.stmt)
         # These stop reachability
         if isinstance(tree, (ast.Return, ast.Raise)):
             return False
         elif isinstance(tree, ast.Assert):
-            if FlowAnalysis.expression_must_be_false(tree.test):
-                return False
+            return not FlowAnalysis.expression_must_be_false(tree.test)
         # These propagage reachability
         elif isinstance(tree, ast.If):
             branches = []
@@ -1270,14 +1273,14 @@ class FlowAnalysis():
                 branches.append(tree.orelse)
             if not FlowAnalysis.expression_must_be_false(tree.test):
                 branches.append(tree.body)
-            return any(FlowAnalysis.inexisting_last_line_is_reachable(brch)
-                       for brch in branches)
+            return any(this_func(brch) for brch in branches)
         elif isinstance(tree, ast.TryFinally):
-            return False
-            # This is complicated to handle :
-            # return inexisting_last_line_is_reachable(tree.finalbody)
-        # Otherwise, assume that code was supposed to be reachable
-        # and that reachability hasn't been broken
+            return this_func(tree.finalbody) and this_func(tree.body)
+        elif isinstance(tree, ast.TryExcept):
+            # TODO: orelse ignore at the moment
+            return this_func(tree.body) or \
+                any(this_func(handler.body) for handler in tree.handlers)
+        # Otherwise, assume reachability hasn't been broken
         return True
 
     @staticmethod
