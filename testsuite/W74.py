@@ -29,11 +29,11 @@ def foobar_ok(x):
 
 
 # Not correct ###
-#: W701:1:1
+#: W741:1:1
 def foo_ko(x):
     if x >= 0:
         return math.sqrt(x)
-#: W700:3:9
+#: W740:3:9
 def bar_ko(x):
     if x < 0:
         return
@@ -68,32 +68,32 @@ def outer_function():
     print(42 == nested_function())
     return
 # Not correct ###
-#: W701:1:1
+#: W741:1:1
 def foo_ko(x):
     if x >= 0:
         return math.sqrt(x)
     elif x == 0:
         return 0
-#: W701:1:1
+#: W741:1:1
 def goldbach_conjecture_ko():
     for i in itertools.count(2):
         if not can_be_expressed_as_prime_sum(i):
             return i
 
 
-# W701:1:1
+# W741:1:1
 def return_finally1():  # return 1
     try:
         return 1
     finally:
         pass
-#: W700:5:9
+#: W740:5:9
 def return_finally2():  # return None
     try:
         return 2
     finally:
         return
-#: W700:3:9
+#: W740:3:9
 def return_finally3():  # return 4
     try:
         return

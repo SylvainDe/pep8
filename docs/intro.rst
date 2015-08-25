@@ -410,9 +410,9 @@ This is the current list of error and warning codes:
 +----------+----------------------------------------------------------------------+
 | **W7**   | *Statement warning*                                                  |
 +----------+----------------------------------------------------------------------+
-| W700     | inconsistent use of return (explicit)                                |
+| W740     | inconsistent use of return (explicit)                                |
 +----------+----------------------------------------------------------------------+
-| W701     | inconsistent use of return (implicit on reachable end of function)   |
+| W741     | inconsistent use of return (implicit on reachable end of function)   |
 +----------+----------------------------------------------------------------------+
 
 

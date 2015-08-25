@@ -1176,8 +1176,8 @@ class UnconsistentReturns():
     statements (including the final value-less implicit return if
     reachable) or in none of them.
     If a return statement returns an explicit value in a function :
-        * return statements with no explicit values lead to W700.
-        * end of function (if reachable) leads to W701.
+        * return statements with no explicit values lead to W740.
+        * end of function (if reachable) leads to W741.
     """
 
     def __init__(self, tree, filename):
@@ -1211,12 +1211,12 @@ class UnconsistentReturns():
                 if r.value is None:
                     yield (r.lineno,
                            r.col_offset,
-                           "W700 unconsistent return values in %s" % func_name,
+                           "W740 unconsistent return values in %s" % func_name,
                            "toto")
             if FlowAnalysis.end_of_block_is_reachable(func_node.body):
                 yield (func_node.lineno,
                        func_node.col_offset,
-                       "W701 unconsistent return values in %s" % func_name,
+                       "W741 unconsistent return values in %s" % func_name,
                        "toto")
 
 
