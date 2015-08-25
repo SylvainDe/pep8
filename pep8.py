@@ -146,6 +146,7 @@ def tabs_or_spaces(physical_line, indent_char):
     for offset, char in enumerate(indent):
         if char != indent_char:
             return offset, "E101 indentation contains mixed spaces and tabs"
+    return None
 
 
 def tabs_obsolete(physical_line):
@@ -157,6 +158,7 @@ def tabs_obsolete(physical_line):
     indent = INDENT_REGEX.match(physical_line).group(1)
     if '\t' in indent:
         return indent.index('\t'), "W191 indentation contains tabs"
+    return None
 
 
 def trailing_whitespace(physical_line):
@@ -178,6 +180,7 @@ def trailing_whitespace(physical_line):
             return len(stripped), "W291 trailing whitespace"
         else:
             return 0, "W293 blank line contains whitespace"
+    return None
 
 
 def trailing_blank_lines(physical_line, lines, line_number, total_lines):
@@ -194,6 +197,7 @@ def trailing_blank_lines(physical_line, lines, line_number, total_lines):
             return 0, "W391 blank line at end of file"
         if stripped_last_line == physical_line:
             return len(physical_line), "W292 no newline at end of file"
+    return None
 
 
 def maximum_line_length(physical_line, max_line_length, multiline):
@@ -217,7 +221,7 @@ def maximum_line_length(physical_line, max_line_length, multiline):
         if ((len(chunks) == 1 and multiline) or
             (len(chunks) == 2 and chunks[0] == '#')) and \
                 len(line) - len(chunks[-1]) < max_line_length - 7:
-            return
+            return None
         if hasattr(line, 'decode'):   # Python 2
             # The line could contain multi-byte characters
             try:
@@ -227,6 +231,7 @@ def maximum_line_length(physical_line, max_line_length, multiline):
         if length > max_line_length:
             return (max_line_length, "E501 line too long "
                     "(%d > %d characters)" % (length, max_line_length))
+    return None
 
 
 ##############################################################################
@@ -1280,6 +1285,8 @@ class FlowAnalysis():
             # TODO: orelse ignore at the moment
             return this_func(tree.body) or \
                 any(this_func(handler.body) for handler in tree.handlers)
+        elif isinstance(tree, ast.With):
+            return this_func(tree.body)
         # Otherwise, assume reachability hasn't been broken
         return True
 
@@ -1659,7 +1666,8 @@ class Checker(object):
         try:
             tree = compile(''.join(self.lines), '', 'exec', PyCF_ONLY_AST)
         except (ValueError, SyntaxError, TypeError):
-            return self.report_invalid_syntax()
+            self.report_invalid_syntax()
+            return
         for cls, __ in self._ast_checks:
             checker = cls(tree, self.filename)
             for lineno, offset, text, check in checker.run():
@@ -1803,7 +1811,7 @@ class BaseReport(object):
         """Report an error, according to options."""
         code = text[:4]
         if self._ignore_code(code):
-            return
+            return None
         if code in self.counters:
             self.counters[code] += 1
         else:
@@ -1811,7 +1819,7 @@ class BaseReport(object):
             self.messages[code] = text[5:]
         # Don't care about expected errors or warnings
         if code in self.expected:
-            return
+            return None
         if self.print_filename and not self.file_errors:
             print(self.filename)
         self.file_errors += 1
@@ -1922,7 +1930,7 @@ class DiffReport(StandardReport):
 
     def error(self, line_number, offset, text, check):
         if line_number not in self._selected[self.filename]:
-            return
+            return None
         return super(DiffReport, self).error(line_number, offset, text, check)
 
 
@@ -2001,7 +2009,7 @@ class StyleGuide(object):
         """Check all files in this directory and all subdirectories."""
         dirname = dirname.rstrip('/')
         if self.excluded(dirname):
-            return 0
+            return
         counters = self.options.report.counters
         verbose = self.options.verbose
         filepatterns = self.options.filename
